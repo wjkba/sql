@@ -209,3 +209,209 @@ LIMIT 3
 SELECT * FROM customers
 LIMIT 6, 3
 ```
+# Pobieranie danych z wielu tabel
+
+## Inner join
+
+Klauzula `JOIN` służy do łączenia wierszy z dwóch lub więcej tabel na podstawie powiązanej kolumny między nimi
+
+Poniższy kod łączy wewnętrznie tabelę orders z tabelą customers na podstawie `customer_id`. Zapytanie patrzy na `customer_id` tabeli orders i znajduje odpowiedni rekord z tym samym id w tabeli customers.
+
+`o` i `c` obok orders i customers to aliasy, które sprawiają, że kod jest bardziej czytelny
+
+```sql
+SELECT order_id, o.customer_id, first_name, last_name
+FROM orders o
+JOIN customers c
+	ON o.customer_id = c.customer_id
+```
+
+## Łączenie między bazami danych
+
+Kiedy chcemy uzyskać dostęp do tabeli z innej bazy danych niż aktualna musimy dodać prefix
+
+W tym przypadku chcę mieć dostęp do tabeli `products` , która jest w bazie `sql_inventory`
+
+`sql_inventory.products`
+
+```sql
+SELECT *
+FROM order_items oi
+JOIN sql_inventory.products p
+ ON oi.product_id = p.product_id
+```
+
+## Self joins
+
+Łączenie tabeli z samą sobą
+
+Jedyna różnica w łączeniu ze sobą tej samej tabeli jest taka, że musimy mieć dwa aliasy i pamiętać o prefiksach kiedy łączymy ze sobą dane
+
+Niżej mamy baze danych, która zawiera informacje o pracownikach, każdy pracownik ma przypisane id managera a sam manager też jest pracownikiem
+
+```sql
+USE sql_hr;
+SELECT e.employee_id, e.first_name, m.first_name AS manager_name
+FROM employees e
+JOIN employees m
+    ON e.reports_to = m.employee_id
+```
+
+## Łączenie wielu tabel
+
+W przypadku więcej niż jednej tabeli postępujemy tak jak wcześniej i po prostu używamy znowu klauzuli `JOIN` , trzeba pamiętać o prefixach i aliasach
+
+```sql
+SELECT order_id,order_date,c.first_name, c.last_name, os.name AS status
+FROM orders o
+JOIN customers c
+    ON o.customer_id = c.customer_id
+JOIN order_statuses os
+    ON o.status = os.order_status_id
+```
+
+## Compound Join Conditions
+
+W poniższym przykładzie łączymy tabele na podstawie dwóch warunków
+
+```sql
+SELECT *
+FROM order_items oi
+JOIN order_item_notes oin
+    ON oi.order_id = oin.order_Id
+    AND oi.product_id = oin.product_id
+```
+
+## Outer joins
+
+Outer join’y zwracają dopasowane i niedopasowane wartości z jednej lub obu tabel
+
+`LEFT` i `RIGHT` joiny automatycznie są outer, nie trzeba używać `LEFT/RIGHT OUTER`
+
+`LEFT JOIN` zwraca wartości z lewej tabeli
+
+`RIGHT JOIN` zwraca wartości z prawej tabeli
+
+Niżej mamy dwie tabele `products` i `order_items` , stosujemy lewego outer joina i wynikiem będą wybrane kolumny na podstawie `product_id`  - te, które spełniają warunek i te, które nie spełeniają warunku. Outer joiny jest z lewej strony czyli jeśli product z tabeli `products` nie ma zamówienia w `order_items` to wynikiem `quantity` będzie `null`
+
+```sql
+SELECT p.product_id, p.name, oi.quantity
+FROM products p
+LEFT JOIN order_items oi 
+	ON p.product_id = oi.product_id
+```
+
+## Outer join między wieloma tabelami
+
+Przy wielu tabelach najlepszą praktyką jest używanie `LEFT JOIN` , lepiej nie mieszać left i right bo kod jest mniej czytelny
+
+```sql
+SELECT c.customer_id, c.first_name, o.order_id, sh.name AS shipper
+FROM customers c
+LEFT JOIN orders o
+    ON c.customer_id = o.customer_id
+LEFT JOIN shippers sh
+    ON o.shipper_id = sh.shipper_id
+ORDER BY c.customer_id
+```
+
+## Self Outer Joins
+
+W tym przykładzie każdy pracownik ma przypisane id managera, w zwykłym self join’ie wynikiem będą tylko pracownicy, którzy mają managera. W tym przypadku dostaniemy również rekord samego managera, który też jest pracownikiem a managerem tego managera jest `null`
+
+```sql
+SELECT e.employee_id, e.first_name, m.first_name AS manager
+FROM employees e
+LEFT JOIN employees m
+    ON e.reports_to = m.employee_id
+```
+
+## USING
+
+Jeśli kolumny między tabelami mają takie same nazwy nie trzeba pisać warunku `ON` wartość jednej kolumny równa się druga. Wystarzcy użyć `ON (nazwa_wspolnej_kolumny)`
+
+```sql
+SELECT o.order_id, c.first_name
+FROM orders o
+JOIN customers c
+    -- ON o.customer_id = c.customer_id
+    USING (customer_id)
+```
+
+```sql
+SELECT *
+FROM order_items oi
+JOIN order_item_notes oin
+    USING(order_id, product_id)
+#     ON oi.order_id = oin.order_Id AND
+#        oi.product_id = oin.product_id
+```
+
+## Natural joins
+
+Natural join łączy tabele na podstawie wspólnych kolumn
+
+⚠️ Nie mamy kontroli nad tym co wybieramy, ten join nie jest rekomendowany
+
+```sql
+SELECT o.order_id, c.first_name
+FROM orders o
+NATURAL JOIN customers c
+```
+
+## Cross joins
+
+Cross joiny łączą każdy rekord z pierwszej tabeli z każdym rekordem z drugiej tabeli bez warunku.
+
+Wszystko ze wszystkim
+
+Explicit:
+
+```sql
+SELECT sh.name, p.name
+FROM shippers sh
+CROSS JOIN products p
+ORDER BY shipper_id
+```
+
+Implicit (ten sam wynik):
+
+```sql
+SELECT sh.name, p.name
+FROM shippers sh, products p
+ORDER BY shipper_id
+```
+
+## Unions
+
+Operator `UNION` służy do łączenia zestawu wyników dwóch lub więcej instrukcji `SELECT`
+
+```sql
+SELECT order_id, order_date,
+       'Active' AS status
+FROM orders
+WHERE order_date >= '2019-01-01'
+UNION
+SELECT order_id, order_date,
+       'Archived' AS status
+FROM orders
+WHERE order_date < '2019-01-01'
+```
+
+```sql
+SELECT customer_id, first_name, points,
+       'Bronze' AS type
+FROM customers
+    WHERE points < 2000
+UNION
+SELECT customer_id, first_name, points,
+       'Silver' AS type
+FROM customers
+    WHERE points BETWEEN 2000 AND 3000
+UNION
+SELECT customer_id, first_name, points,
+       'Gold' AS type
+FROM customers
+    WHERE points > 3000
+ORDER BY first_name
+```
