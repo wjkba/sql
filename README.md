@@ -415,3 +415,156 @@ FROM customers
     WHERE points > 3000
 ORDER BY first_name
 ```
+
+# Wstawianie, aktualizacja i usuwanie danych
+
+## Wstawianie pojedynczego rekordu
+
+`INSERT INTO nazwa_tabeli` służy do wstawiania nowych rekordów do tabeli.
+
+w `VALUES()` wpisujemy wartości, które chcemy wstawić
+
+metoda 1, tutaj trzeba zachować kolejnośc kolumn tak jak w bazie danych
+
+```sql
+INSERT INTO customers
+VALUES (
+        DEFAULT,
+        'JOHN',
+        'SMITH',
+        '1990-01-01',
+        NULL,
+        'address',
+        'city',
+        'CA',
+        DEFAULT
+       )
+```
+
+metoda 2, tutaj sami wybieramy kolejność wstawianych wartości
+
+```sql
+INSERT INTO customers (last_name,
+                       first_name,
+                       birth_date,
+                       address,
+                       city,
+                       state)
+VALUES (
+        'SMITH',
+        'JOHN',
+        '1990-01-01',
+        'address',
+        'city',
+        'CA'
+       )
+```
+
+## Wstawianie wielu rekordów
+
+```sql
+INSERT INTO shippers (name)
+VALUES ('Shipper1'),
+       ('Shipper2'),
+       ('Shipper3')
+```
+
+## Wstawianie rekordów do wielu tabel z hierarchią
+
+W tym przypadku chcemy dodać nowy zamówienie do tabeli `orders` i zaraz po nowym zamówieniu dodajemy przedmioty do tabeli `order_items` 
+
+Żeby dodać nowe przedmioty do `order_items` tabeli potrzebujemy `order_id` nowego zamówienia, id możemy dostać za pomocą funkcji `LAST_INSERT_ID()` , ktorej używamy jako wartości kiedy dodajemy nowy rekord przedmiotu do tabeli `order_items` 
+
+```sql
+INSERT INTO orders (customer_id, order_date, status)
+VALUES(1, '2019-01-02', 1);
+
+INSERT INTO order_items
+VALUES(LAST_INSERT_ID(), 1, 1, 2.95),
+      (LAST_INSERT_ID(), 2, 1, 3.95)
+```
+
+## Kopiowanie tabeli
+
+Przy kopiowaniu tabeli w taki sposób tracimy niektóre atrybuty kolumn, np. primary key nie będzie obecny w nowej kopii tabeli
+
+```sql
+CREATE TABLE orders_archived AS
+SELECT * FROM orders
+```
+
+Niżej przykład używania statmentu `SELECT` jako subquery w `INSERT` statement
+
+```sql
+INSERT INTO orders_archived
+SELECT *
+FROM orders
+WHERE order_date < '2019-01-01'
+```
+
+```sql
+CREATE TABLE invoices_archived AS
+SELECT invoice_id, number, c.name, invoice_total, i.payment_total, invoice_date, due_date, payment_date
+FROM invoices i
+JOIN clients c
+	USING(client_id) 
+	WHERE i.payment_date IS NOT NULL
+ORDER BY i.invoice_id
+```
+
+## Aktualizacja pojedynczego rekordu
+
+`UPDATE` służy do modyfikowania istniejących rekordów w tabeli
+
+```sql
+UPDATE invoices
+SET payment_total = 10, payment_date = '2024-09-20'
+WHERE invoice_id = 1
+```
+
+Można aktualizować dane na podstawie aktualnych wartości innych kolumn
+
+```sql
+UPDATE invoices
+SET payment_total = invoice_total * 0.5, payment_date = due_date
+WHERE invoice_id = 3
+```
+
+## Aktualizacja wielu rekordów
+
+Aktualizacja rekordów dla klientów o id 3 i 4
+
+```sql
+UPDATE invoices
+SET payment_total = 999,
+    payment_date = '2024-09-20'
+WHERE client_id IN (3,4) 
+```
+
+## Używanie subqueries w aktualizacji
+
+W tym przykładzie znajdujemy `client_id` na podstawie wartości `name` , która otrzymujemy przy pomocy `SELECT`
+
+```sql
+UPDATE invoices
+SET
+    payment_total = 999,
+    payment_date = '2024-09-20'
+WHERE client_id = (SELECT client_id FROM clients WHERE name = 'Myworks')
+```
+
+```sql
+-- add comment to orders for customers who have more than 3000 points
+UPDATE orders
+    SET comments = 'GOLD'
+WHERE customer_id IN (SELECT customer_id FROM customers WHERE points > 3000)
+```
+
+## Usuwanie rekordów
+
+`DELETE from nazwa_tabeli` służy do usuwania istniejących rekordów w tabeli.
+
+```sql
+DELETE from invoices
+WHERE client_id = (SELECT client_id FROM clients WHERE name = 'Myworks')
+```
