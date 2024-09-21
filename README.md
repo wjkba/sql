@@ -1,4 +1,4 @@
-# sql
+# SQL
 Baza danych to kolekcja danych zapisanych w formacie, który ułatwia dostęp do danych
 
 **DBMS** - Database Managment System
@@ -567,4 +567,146 @@ WHERE customer_id IN (SELECT customer_id FROM customers WHERE points > 3000)
 ```sql
 DELETE from invoices
 WHERE client_id = (SELECT client_id FROM clients WHERE name = 'Myworks')
+```
+
+# Podsumowywanie danych
+
+## Funkcje agregujące
+
+Funkcje agregujące działają tylko na wartościach, które nie są `NULL` . Rekordy z wartościami `NULL` są pomijane w egzekucji funkcji.
+
+```sql
+SELECT MAX(invoice_total) AS highest,
+       MIN(invoice_total) AS lowest,
+       AVG(invoice_total) AS average,
+       SUM(invoice_total) AS total,
+       COUNT(invoice_total) AS number_of_invoices,
+       COUNT(payment_date) AS count_of_payments, -- wartości null będą pominięte
+       COUNT(*) AS total_records
+FROM invoices
+```
+
+`DISTINCT` zwraca tylko unikalne wartości, w przykładzie niżej zapewnia to, że `client_id` nie będzie powtórzone drugi raz
+
+```sql
+SELECT COUNT(DISTINCT client_id) AS total_records
+FROM invoices
+```
+
+```sql
+SELECT
+    'First half of 2019' AS date_range,
+    SUM(invoice_total) AS total_sales,
+    SUM(payment_total) AS total_payments,
+    SUM(invoice_total - payment_total) AS what_we_expect
+FROM invoices
+WHERE invoice_date BETWEEN '2019-01-01' AND '2019-06-30'
+UNION
+SELECT
+    'Second half of 2019' AS date_range,
+    SUM(invoice_total) AS total_sales,
+    SUM(payment_total) AS total_payments,
+    SUM(invoice_total - payment_total) AS what_we_expect
+FROM invoices
+WHERE invoice_date BETWEEN '2019-07-01' AND '2019-12-31'
+UNION
+SELECT
+    'TOTAL' AS date_range,
+    SUM(invoice_total) AS total_sales,
+    SUM(payment_total) AS total_payments,
+    SUM(invoice_total - payment_total) AS what_we_expect
+FROM invoices
+WHERE invoice_date BETWEEN '2019-01-01' AND '2019-12-31'
+
+```
+
+## GROUP BY
+
+`GROUP BY`  grupuje rekordy mające te same wartości w określonych kolumnach, umożliwiając wykonywanie funkcji agregujących, takich jak `SUM`, `COUNT` czy `AVG`, na każdej grupie rekordów
+
+`GROUP BY` jest w kolejności za `FROM` i `WHERE` i przed `ORDER BY`
+
+```sql
+SELECT
+    client_id,
+    SUM(invoice_total) AS total_sales
+FROM invoices
+GROUP BY client_id
+ORDER BY total_sales DESC
+```
+
+```sql
+SELECT
+    state,
+    city,
+    SUM(invoice_total) AS total_sales
+FROM invoices
+JOIN clients USING(client_id)
+GROUP BY state, city
+```
+
+```sql
+SELECT
+    date,
+    pm.name AS payment_method,
+    SUM(amount) AS total_payments
+FROM payments p
+ JOIN payment_methods pm
+ ON payment_method = payment_method_id
+GROUP BY date, payment_method
+ORDER BY date
+```
+
+## HAVING
+
+`HAVING` istnieje, ponieważ `WHERE` nie może być używane z funkcjami agregującymi
+
+`HAVING` stosujemy kiedy rekordy są już pogrupowane
+
+Kolumny, które używamy muszą być zaznaczone przez 2
+
+```sql
+SELECT
+    client_id,
+    SUM(invoice_total) AS total_sales
+FROM invoices
+GROUP BY client_id
+HAVING total_sales > 500
+```
+
+```sql
+SELECT c.customer_id,
+       c.first_name,
+       c.last_name,
+       SUM(oi.unit_price*oi.quantity) AS total_sales
+FROM customers c
+JOIN orders o USING(customer_id)
+JOIN order_items oi USING(order_id)
+WHERE state = 'VA'
+GROUP BY c.customer_id, c.first_name, c.last_name
+HAVING total_sales > 100
+```
+
+## ROLLUP
+
+Dodając `WITH ROLLUP` na koniec `GROUP BY nazwa_kolumny` otrzymujemy podsumowanie, sumę wszystkich poprzednich kolumn. Działa to tylko na funkcjach, które agregują wartości
+
+```sql
+SELECT
+    client_id,
+    SUM(invoice_total) AS total_sales
+FROM invoices
+GROUP BY client_id WITH ROLLUP 
+```
+
+Rollup nie działa z aliasami, trzbea wpisywać dokładną nazwę kolumny
+
+```sql
+SELECT pm.name AS payment_method,
+       SUM(amount) as total
+FROM payments p
+JOIN payment_methods pm
+    ON p.payment_method = pm.payment_method_id
+GROUP BY pm.name WITH ROLLUP
+ORDER BY total
 ```
