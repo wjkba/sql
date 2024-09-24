@@ -710,3 +710,248 @@ JOIN payment_methods pm
 GROUP BY pm.name WITH ROLLUP
 ORDER BY total
 ```
+# Complex query
+
+## Subqueries
+
+Find products that are more expensive that product with id of 3 
+
+```sql
+SELECT *
+FROM products
+WHERE unit_price > (SELECT unit_price FROM products WHERE product_id = 3)
+```
+
+Find employees that earn more than average
+
+```sql
+SELECT *
+FROM employees
+WHERE salary > (SELECT AVG(salary) FROM employees)
+```
+
+## IN
+
+Find the products that have never been ordered
+
+Najpierw warto napisać oddzielne query, które zaznacza wszystkie `DISTINCT` , czyli unikalne wartości z `order_items` tabeli a potem wsadzamy to query do innego query
+
+```sql
+SELECT *
+FROM products p
+WHERE p.product_id NOT IN (SELECT DISTINCT product_id FROM order_items)
+```
+
+Find clients without invoices
+
+```sql
+SELECT *
+FROM clients
+WHERE client_id NOT IN (SELECT DISTINCT client_id FROM invoices)
+```
+
+## Subqueries vs Joins
+
+Powyższy przykład z klientami, którzy nie mają invoice’ów można zapisać użwyając `LEFT JOIN` 
+
+Wynik będzie taki sam chociaż wcześniejszy zapis jest bardziej czytelny
+
+```sql
+SELECT *
+FROM clients
+LEFT JOIN invoices USING(client_id)
+WHERE invoice_id IS NULL
+```
+
+Find customers who have ordered lettuce
+
+Podejście używając subquery
+
+```sql
+SELECT c.customer_id, c.first_name, c.last_name
+FROM customers c
+WHERE c.customer_id IN(
+    SELECT o.customer_id
+    FROM order_items oi
+    JOIN orders o USING(order_id)
+    WHERE product_id = 3
+		)
+```
+
+Podejście używając `JOIN`. W tym przypadku join jest bardziej czytelny, intuicyjny
+
+```sql
+SELECT DISTINCT customer_id, first_name, last_name
+FROM customers c
+JOIN orders o USING(customer_id)
+JOIN order_items oi USING(order_id)
+WHERE oi.product_id = 3
+```
+
+## ALL
+
+Select invoices larger than all invoices of client 3
+
+Można to rozwiązać na dwa sposoby, pierwszy używa wybiera maksymalną wartość invoice dla klienta i przyrównuje z innymi. Subquery tutaj zwraca jedną wartość
+
+```sql
+SELECT *
+FROM invoices
+WHERE invoice_total > (
+    SELECT MAX(invoice_total)
+    FROM invoices
+    WHERE client_id = 3
+);
+```
+
+Drugi sposób używa keyworda `ALL` , tutaj dla każdej wartości invoice klienta porównujemy wszystkie zaznaczone wartości w środku `ALL` .  Subquery tutaj zwraca listę wartości, dzięki `ALL` można porównać liste wartości z pojedynczą wartością. Wynik jest taki sam jak wyżej
+
+```sql
+SELECT *
+FROM invoices
+WHERE invoice_total > ALL(
+    SELECT invoice_total
+    FROM invoices
+    WHERE client_id = 3
+)
+```
+
+## ANY
+
+Select clients with at lest two invocies
+
+Dwa sposoby, dla subquery możemu użyć `IN` , który sprawdzi czy `client_id` należy do listy wartości z wyniku subquery
+
+```sql
+SELECT *
+FROM clients
+WHERE client_id IN (
+    SELECT client_id
+    FROM invoices
+    GROUP BY client_id
+    HAVING COUNT(*) >= 2
+);
+```
+
+Zamiast `IN` można użyć `= ANY()` , wynik bedzie taki sam
+
+```sql
+SELECT *
+FROM clients
+WHERE client_id = ANY(
+    SELECT client_id
+    FROM invoices
+    GROUP BY client_id
+    HAVING COUNT(*) >= 2
+)
+
+```
+
+## Corelated subqueries
+
+Select employees whose salary is above the average in their office
+
+Niżej subquery będzie uruchamiane dla każdego `employee` , będzie obliczało average salary dla pracowników w tym samym `office_id` . Czynność ta jest powtarzana dla każdego employee i nazywamy to corelated subquery, w subquery jest korelacja między zewnętrznym query
+
+```sql
+SELECT *
+FROM employees e
+WHERE salary > (
+    SELECT AVG(salary)
+    FROM employees
+    WHERE office_id = e.office_id
+)
+```
+
+```sql
+SELECT *
+FROM invoices i
+WHERE invoice_total > (
+    SELECT AVG(invoice_total)
+    FROM invoices
+    WHERE i.client_id = client_id
+)
+```
+
+## Exists
+
+Select client that have an invoice
+
+Niżej w subquery zaznaczamy unikalne `client_id` i zwracana jest lista pasujących wyników, która przyrównujemy do `client_id` w zewnętrznym query używając `WHERE client_id IN()`
+
+```sql
+SELECT *
+FROM clients
+WHERE client_id IN(SELECT DISTINCT client_id FROM invoices);
+// WHERE client_id IN(1, 2, 3, 5)
+```
+
+Inaczej działa keyword `EXISTS` , który tylko daje znać czy dany warunek jest spełniony. W momencie kiedy znajdzie pasujący rekord to zwraca `TRUE`. Jeśli mamy dużo rekordów to `EXISTS` jest bardziej wydajnym podejściem, nie generuje długiej listy do której trzeba przyrównywać wartości tak jak w przypadku zwykłego `IN` i subquery
+
+```sql
+SELECT *
+FROM clients c
+WHERE EXISTS(
+    SELECT client_id
+    FROM invoices
+    WHERE client_id = c.client_id
+)
+```
+
+Find the products that have never been ordered
+
+```sql
+SELECT *
+FROM products p
+WHERE NOT EXISTS(
+    SELECT *
+    FROM order_items oi
+    WHERE p.product_id = oi.product_id
+)
+```
+
+## Subqueries in SELECT
+
+Subqueries można używać w `SELECT` 
+
+Obliczając różnicę nie mogłem zapisać `invoice_total - invoice_average` , ponieważ `invoice_average` to alias dlatego potrzebny jest przed nim `SELECT`
+
+```sql
+SELECT
+    invoice_id,
+    invoice_total,
+    (SELECT AVG(invoice_total)
+     FROM invoices) AS invoice_average,
+    (invoice_total - (SELECT invoice_average)) AS difference
+FROM invoices
+```
+
+```sql
+SELECT client_id,
+       name,
+       (SELECT SUM(invoice_total)
+        FROM invoices i
+        WHERE(i.client_id = c.client_id)) AS total_sales,
+        (SELECT AVG(invoice_total) from invoices) AS average,
+        (SELECT total_sales - average) AS difference
+FROM clients c
+```
+
+## Subqueries in FROM
+
+W `FROM` można używać subquery, lepiej ograniczać się do prostych subquery. Da się też stworzyć takiego potwora jak niżej, ale do tego lepiej już nadaje się view.
+
+```sql
+SELECT *
+FROM (
+    SELECT client_id,
+       name,
+       (SELECT SUM(invoice_total)
+        FROM invoices i
+        WHERE(i.client_id = c.client_id)) AS total_sales,
+        (SELECT AVG(invoice_total) from invoices) AS average,
+        (SELECT total_sales - average) AS difference
+    FROM clients c
+     ) AS sales_summary
+WHERE total_sales IS NOT NULL
+```
